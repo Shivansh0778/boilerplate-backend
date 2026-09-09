@@ -47,14 +47,27 @@ const userSchema = new mongoose.Schema(
       enum: ["user", "admin"],
       default: "user",
     },
-    resetPasswordToken: {
+
+    resetPasswordOtp: {
       type: String,
       default: null,
     },
 
-    resetPasswordExpires: {
+    resetPasswordOtpExpires: {
       type: Date,
       default: null,
+    },
+    resetPasswordOtpAttempts: {
+      type: Number,
+      default: 0,
+    },
+    resetPasswordOtpVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {

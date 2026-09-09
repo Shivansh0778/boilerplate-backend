@@ -1,12 +1,13 @@
 const User = require("../models/user");
 const { hashPassword } = require("../utils/password");
 const crypto = require("crypto");
-
+const mongoose = require("mongoose");
+const { sendAccountCredentialsEmail } = require("../services/email.service");
 
 const getUsers = async (req, res) => {
   try {
     const users = await User.find().select(
-      "-password -resetPasswordToken -resetPasswordExpires",
+      "-password -resetPasswordOtp -resetPasswordOtpExpires -resetPasswordOtpAttempts -resetPasswordOtpVerified",
     );
 
     return res.status(200).json({
@@ -58,6 +59,12 @@ const createUser = async (req, res) => {
       role: role || "user",
     });
 
+    await sendAccountCredentialsEmail({
+      to: user.email,
+      firstName: user.firstName,
+      temporaryPassword,
+    });
+
     return res.status(201).json({
       success: true,
       message:
@@ -90,15 +97,27 @@ const createUser = async (req, res) => {
 
 const updateUser = async function (req, res) {
   try {
-    const { firstName, lastName, email, dob, role } = req.body;
+    if (req.body.role !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Role cannot be updated",
+      });
+    }
+    const { firstName, lastName, email, dob } = req.body;
 
     const updateData = {
       firstName,
       lastName,
       email,
       dob,
-      role,
     };
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
 
     const user = await User.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
@@ -150,6 +169,12 @@ const updateUser = async function (req, res) {
 
 const deleteUser = async function (req, res) {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
     const user = await User.findByIdAndDelete(req.params.id);
 
     if (!user) {
@@ -173,9 +198,90 @@ const deleteUser = async function (req, res) {
   }
 };
 
+const updateUserStatus = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const { isActive } = req.body;
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "isActive must be a boolean",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { isActive },
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).select(
+      "-password -resetPasswordOtp -resetPasswordOtpExpires -resetPasswordOtpAttempts -resetPasswordOtpVerified",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `User ${isActive ? "activated" : "deactivated"} successfully`,
+      user,
+    });
+  } catch (error) {
+    console.error("Update user status error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+const getUserStats = async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+
+    const inactiveUsers = await User.countDocuments({
+      isActive: false,
+    });
+
+    const activeUsers = totalUsers - inactiveUsers;
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalUsers,
+        activeUsers,
+        inactiveUsers,
+      },
+    });
+  } catch (error) {
+    console.error("Get user stats error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
 module.exports = {
   getUsers,
   createUser,
   updateUser,
   deleteUser,
+  updateUserStatus,
+  getUserStats,
 };
